@@ -40,7 +40,8 @@ if uploaded_file is not None:
             'Arbitration Status', 'Linguistic', 'Meaning', 'Terminology', 
             'Fluency', 'Cultural', 'i18n', 'Consistency', 'Major',
             '100TM match', 'Repeated', 'Accepted', 'Rejected', 'Open',
-            'Fuzzy', 'Machine translation', 'New'
+            'Fuzzy', 'Machine translation', 'New', 'Owner/TR', 'RV/PR', 
+            'Squad', 'Workflow'
         ]
         
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -120,7 +121,7 @@ if uploaded_file is not None:
             st.subheader("Service Score Analysis")
             
             # Create dimensions for analysis
-            dimensions = ['Translator', 'Copy editor', 'Product', 'Content', 'month', 'week', 'Issue Category']
+            dimensions = ['Translator', 'Copy editor', 'Product', 'Content', 'month', 'week', 'Issue Category', 'Owner/TR', 'RV/PR', 'Squad', 'Workflow']
             available_dimensions = [dim for dim in dimensions if dim in df.columns]
             
             if available_dimensions:
@@ -233,13 +234,14 @@ if uploaded_file is not None and 'df' in locals():
     st.subheader("Multi-dimensional Analysis")
     
     # Create columns for filter selection
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     # Define potential filter dimensions
     filter_dimensions = [
         'Translator', 'Copy editor', 'Product', 'Content', 
         'Translation Type', 'Issue Category', 'Issue Sub-Category',
-        'Issue Severity', 'TM Match Type'
+        'Issue Severity', 'TM Match Type', 'Owner/TR', 'RV/PR', 
+        'Squad', 'Workflow'
     ]
     
     # Only show dimensions that exist in the dataframe
@@ -256,17 +258,27 @@ if uploaded_file is not None and 'df' in locals():
     
     # Select filters
     with col1:
-        filter1 = st.selectbox("Primary Filter Dimension:", 
+        filter1 = st.selectbox("1st Dimension:", 
                               ['None'] + available_filters, 
                               index=1 if len(available_filters) > 0 else 0)
     
     with col2:
-        filter2 = st.selectbox("Secondary Filter Dimension:", 
+        filter2 = st.selectbox("2nd Dimension:", 
                               ['None'] + available_filters,
                               index=2 if len(available_filters) > 1 else 0)
     
     with col3:
-        filter3 = st.selectbox("Tertiary Filter Dimension:", 
+        filter3 = st.selectbox("3rd Dimension:", 
+                              ['None'] + available_filters,
+                              index=0)
+    
+    with col4:
+        filter4 = st.selectbox("4th Dimension:", 
+                              ['None'] + available_filters,
+                              index=0)
+    
+    with col5:
+        filter5 = st.selectbox("5th Dimension:", 
                               ['None'] + available_filters,
                               index=0)
     
@@ -289,7 +301,7 @@ if uploaded_file is not None and 'df' in locals():
         filtered_df = df.copy()
     
     # Apply multi-dimensional filters and analysis
-    if filter1 != 'None' or filter2 != 'None' or filter3 != 'None':
+    if filter1 != 'None' or filter2 != 'None' or filter3 != 'None' or filter4 != 'None' or filter5 != 'None':
         st.subheader("Multi-dimensional Analysis Results")
         
         # Create groupby dimensions list
@@ -300,6 +312,10 @@ if uploaded_file is not None and 'df' in locals():
             groupby_dims.append(filter2)
         if filter3 != 'None':
             groupby_dims.append(filter3)
+        if filter4 != 'None':
+            groupby_dims.append(filter4)
+        if filter5 != 'None':
+            groupby_dims.append(filter5)
         
         if len(groupby_dims) > 0:
             # Group by the selected dimensions
@@ -365,11 +381,12 @@ if uploaded_file is not None and 'df' in locals():
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                elif len(groupby_dims) == 3:
-                    # 3D analysis - use a bubble chart
-                    # Color by the first dimension, size by word count
-                    st.markdown("### 3D Analysis")
-                    st.markdown(f"Dimensions: {groupby_dims[0]}, {groupby_dims[1]}, {groupby_dims[2]}")
+                elif len(groupby_dims) >= 3:
+                    # For 3+ dimensions, use enhanced bubble chart
+                    st.markdown(f"### Multi-dimensional Analysis ({len(groupby_dims)} dimensions)")
+                    st.markdown(f"Primary dimensions: {', '.join(groupby_dims[:3])}")
+                    if len(groupby_dims) > 3:
+                        st.markdown(f"Additional dimensions: {', '.join(groupby_dims[3:])}")
                     
                     # Let user choose which dimension to use for coloring
                     color_dim = st.selectbox(
@@ -378,23 +395,34 @@ if uploaded_file is not None and 'df' in locals():
                         index=0
                     )
                     
+                    # Let user choose X and Y axes
+                    x_dim = st.selectbox(
+                        "Select dimension for X axis:",
+                        groupby_dims + ['Total_WC'],
+                        index=1 if len(groupby_dims) > 1 else 0
+                    )
+                    
                     # Create scatter plot with bubble size based on word count
+                    hover_data = ['Error_Rate', 'Total_Issues']
+                    for dim in groupby_dims:
+                        if dim != color_dim and dim != x_dim:
+                            hover_data.append(dim)
+                    
                     fig = px.scatter(
                         multi_grouped,
-                        x=groupby_dims[1],
+                        x=x_dim,
                         y='SS',
                         color=color_dim,
                         size='Total_WC',
-                        hover_name=groupby_dims[2],
-                        hover_data=['Error_Rate', 'Total_Issues'],
-                        title=f"Service Score Analysis by {', '.join(groupby_dims)}",
+                        hover_data=hover_data,
+                        title=f"Service Score Analysis by Multiple Dimensions",
                         labels={'SS': 'Service Score'}
                     )
                     
                     fig.add_hline(y=90, line_dash="dash", line_color="red")
                     
                     fig.update_layout(
-                        xaxis_title=groupby_dims[1],
+                        xaxis_title=x_dim,
                         yaxis_title="Service Score",
                         yaxis=dict(range=[60, 105])
                     )
@@ -608,7 +636,7 @@ if uploaded_file is not None and 'df' in locals():
                     elif last_ss < middle_ss < first_ss:
                         insights.append(f"📉 Negative trend detected: Service Score has been declining over the last 3 months ({first_ss}% → {middle_ss}% → {last_ss}%).")
         
-        # Identify top error categories
+        # Identify top errorop error categories
         error_categories = [
             'Linguistic', 'Meaning', 'Terminology', 'Fluency', 'Cultural', 
             'i18n', 'Consistency'
@@ -633,6 +661,37 @@ if uploaded_file is not None and 'df' in locals():
                 if len(sorted_errors) >= 3:
                     insights.append(f"💡 Top 3 error categories to focus on: {sorted_errors[0][0]} ({sorted_errors[0][1]}), {sorted_errors[1][0]} ({sorted_errors[1][1]}), and {sorted_errors[2][0]} ({sorted_errors[2][1]}) per 1k words.")
         
+        # Add insights about new columns (Owner/TR, RV/PR, Squad, Workflow)
+        new_columns = ['Owner/TR', 'RV/PR', 'Squad', 'Workflow']
+        for col in new_columns:
+            if col in filtered_df.columns:
+                try:
+                    # Get top performer for each column
+                    top_df = filtered_df.groupby(col).agg(
+                        Total_WC=('WC2', 'sum'),
+                        Total_Error_Points=('Error Points', 'sum')
+                    ).reset_index()
+                    
+                    # Calculate SS
+                    top_df['SS'] = (100 - (top_df['Total_Error_Points'] / top_df['Total_WC'] * 1000)).round(2)
+                    
+                    # Filter for meaningful data (at least 1000 words)
+                    top_df = top_df[top_df['Total_WC'] >= 1000]
+                    
+                    if not top_df.empty:
+                        # Get the best and worst performers
+                        best = top_df.loc[top_df['SS'].idxmax()]
+                        worst = top_df.loc[top_df['SS'].idxmin()]
+                        
+                        # Add insights
+                        if best['SS'] > 90:
+                            insights.append(f"⭐ Best {col}: '{best[col]}' with SS of {best['SS']}% ({best['Total_WC']} words)")
+                        
+                        if worst['SS'] < 85 and best[col] != worst[col]:
+                            insights.append(f"⚠️ {col} requiring attention: '{worst[col]}' with SS of {worst['SS']}% ({worst['Total_WC']} words)")
+                except:
+                    pass
+                
         # Display all insights
         for i, insight in enumerate(insights):
             st.markdown(f"{i+1}. {insight}")
@@ -806,6 +865,89 @@ if uploaded_file is not None and 'df' in locals():
         else:
             st.warning(f"No data available with word count >= {min_wc_threshold}")
     
+    # Analysis of new columns (Owner/TR, RV/PR, Squad, Workflow)
+    new_columns_available = [col for col in ['Owner/TR', 'RV/PR', 'Squad', 'Workflow'] if col in filtered_df.columns]
+    
+    if new_columns_available:
+        st.subheader("New Dimensions Analysis")
+        
+        selected_new_dim = st.selectbox(
+            "Select new dimension to analyze:",
+            new_columns_available
+        )
+        
+        # Analyze the selected dimension
+        if selected_new_dim in filtered_df.columns:
+            new_dim_df = filtered_df.groupby(selected_new_dim).agg(
+                Total_WC=('WC2', 'sum'),
+                Total_Error_Points=('Error Points', 'sum')
+            ).reset_index()
+            
+            # Calculate SS
+            new_dim_df['SS'] = (100 - (new_dim_df['Total_Error_Points'] / new_dim_df['Total_WC'] * 1000)).round(2)
+            
+            # Filter for meaningful data (at least 100 words)
+            new_dim_df = new_dim_df[new_dim_df['Total_WC'] >= 100]
+            
+            if not new_dim_df.empty:
+                # Sort by SS
+                new_dim_df = new_dim_df.sort_values('SS', ascending=False)
+                
+                # Display table
+                st.dataframe(new_dim_df, use_container_width=True)
+                
+                # Create visualization
+                fig = px.bar(
+                    new_dim_df,
+                    x=selected_new_dim,
+                    y='SS',
+                    color='SS',
+                    color_continuous_scale='RdYlGn',
+                    range_color=[60, 100],
+                    text='SS',
+                    hover_data=['Total_WC', 'Total_Error_Points'],
+                    title=f"Service Score by {selected_new_dim}"
+                )
+                
+                fig.add_hline(y=90, line_dash="dash", line_color="red")
+                
+                fig.update_layout(
+                    xaxis_title=selected_new_dim,
+                    yaxis_title="Service Score"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Create sunburst chart with one of the original dimensions
+                if filter1 != 'None' and filter1 != selected_new_dim and filter1 in filtered_df.columns:
+                    # Create a sunburst visualization
+                    st.subheader(f"Sunburst Analysis: {selected_new_dim} and {filter1}")
+                    
+                    sunburst_df = filtered_df.groupby([selected_new_dim, filter1]).agg(
+                        Total_WC=('WC2', 'sum'),
+                        Total_Error_Points=('Error Points', 'sum')
+                    ).reset_index()
+                    
+                    # Calculate SS
+                    sunburst_df['SS'] = (100 - (sunburst_df['Total_Error_Points'] / sunburst_df['Total_WC'] * 1000)).round(2)
+                    
+                    # Filter for meaningful data
+                    sunburst_df = sunburst_df[sunburst_df['Total_WC'] >= 100]
+                    
+                    if not sunburst_df.empty:
+                        fig = px.sunburst(
+                            sunburst_df, 
+                            path=[selected_new_dim, filter1], 
+                            values='Total_WC',
+                            color='SS',
+                            color_continuous_scale='RdYlGn',
+                            range_color=[60, 100],
+                            hover_data=['Total_Error_Points'],
+                            title=f"Service Score by {selected_new_dim} and {filter1}"
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+    
     # Word Count vs Error Rate Analysis
     st.subheader("Word Count vs Error Rate Analysis")
     
@@ -856,6 +998,104 @@ if uploaded_file is not None and 'df' in locals():
                 st.markdown("📉 There seems to be a **negative correlation** between word count and error rate. Higher word counts tend to have lower error rates.")
         else:
             st.markdown("🔄 There is no strong correlation between word count and error rate.")
+    
+    # Five-dimensional combined analysis
+    if all(x != 'None' for x in [filter1, filter2, filter3, filter4, filter5]):
+        st.header("Five-Dimensional Combined Analysis")
+        
+        st.markdown("""
+        This special analysis combines all five selected dimensions to identify patterns and outliers
+        in your translation quality data. Each dimension contributes to the overall analysis.
+        """)
+        
+        # Create a unique identifier for each combination
+        five_dim_df = filtered_df.copy()
+        five_dim_df['dimension_key'] = ''
+        for dim in [filter1, filter2, filter3, filter4, filter5]:
+            five_dim_df['dimension_key'] += five_dim_df[dim].astype(str) + " | "
+        
+        # Group by the combined key
+        combined_df = five_dim_df.groupby('dimension_key').agg(
+            Total_WC=('WC2', 'sum'),
+            Total_Error_Points=('Error Points', 'sum')
+        ).reset_index()
+        
+        # Calculate SS
+        combined_df['SS'] = (100 - (combined_df['Total_Error_Points'] / combined_df['Total_WC'] * 1000)).round(2)
+        
+        # Filter for meaningful data
+        combined_df = combined_df[combined_df['Total_WC'] >= 500]
+        
+        if not combined_df.empty:
+            # Sort by SS
+            combined_df = combined_df.sort_values('SS', ascending=False)
+            
+            # Extract the key back into separate columns for better display
+            for i, dim in enumerate([filter1, filter2, filter3, filter4, filter5]):
+                combined_df[dim] = combined_df['dimension_key'].str.split(' | ', expand=True)[i]
+            
+            # Display table with the individual dimensions and metrics
+            st.dataframe(
+                combined_df[[filter1, filter2, filter3, filter4, filter5, 'Total_WC', 'SS']].style.background_gradient(
+                    subset=['SS'], 
+                    cmap='RdYlGn', 
+                    vmin=0, 
+                    vmax=100
+                ),
+                use_container_width=True
+            )
+            
+            # Create a parallel coordinates plot
+            fig = px.parallel_coordinates(
+                combined_df, 
+                dimensions=[filter1, filter2, filter3, filter4, filter5, 'SS'],
+                color='SS',
+                color_continuous_scale='RdYlGn',
+                range_color=[60, 100],
+                title="Five-Dimensional Parallel Coordinates Analysis"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Create a 3D scatter plot using three of the dimensions
+            st.subheader("3D Visualization of Selected Dimensions")
+            
+            # Select which dimensions to use for 3D plot
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                x_dim = st.selectbox("X-axis dimension:", [filter1, filter2, filter3, filter4, filter5], index=0)
+            
+            with col2:
+                y_dim = st.selectbox("Y-axis dimension:", [filter1, filter2, filter3, filter4, filter5], index=1)
+            
+            with col3:
+                z_dim = st.selectbox("Z-axis dimension:", [filter1, filter2, filter3, filter4, filter5], index=2)
+            
+            if x_dim != y_dim and x_dim != z_dim and y_dim != z_dim:
+                # Create 3D scatter plot
+                fig = px.scatter_3d(
+                    combined_df,
+                    x=x_dim,
+                    y=y_dim,
+                    z=z_dim,
+                    color='SS',
+                    size='Total_WC',
+                    hover_data=[filter1, filter2, filter3, filter4, filter5, 'SS'],
+                    color_continuous_scale='RdYlGn',
+                    range_color=[60, 100],
+                    title="3D Visualization of Selected Dimensions"
+                )
+                
+                fig.update_layout(
+                    scene=dict(
+                        xaxis_title=x_dim,
+                        yaxis_title=y_dim,
+                        zaxis_title=z_dim
+                    )
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Please upload an Excel file in the section above to enable advanced analysis.")
 
