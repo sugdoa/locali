@@ -1102,3 +1102,379 @@ else:
 # Add footer for Part 2
 st.markdown("---")
 st.markdown("Translation Quality Analysis Dashboard - Advanced Analysis v1.0")
+
+# Add Individual Level Analysis Section
+st.markdown("---")
+st.header("🧑‍💻 Individual Level Analysis")
+
+# Only show this section if data is uploaded
+if 'df' in locals() or 'df' in st.session_state:
+    df = st.session_state.get('df', locals().get('df', None))
+    
+    # Create tabs for different analysis types
+    individual_tabs = st.tabs(["Individual Performance", "Performance Comparison"])
+    
+    with individual_tabs[0]:  # Individual Performance Tab
+        st.subheader("Individual Performance Analysis")
+        
+        # Step 1: Select category (Owner/TR or RV/PR)
+        category_type = st.radio("Select Category", ["Owner/TR", "RV/PR"])
+        
+        # Ensure the category column exists in the dataframe
+        if category_type in df.columns:
+            # Step 2: Get names from the selected category
+            # Convert all values to strings to avoid type comparison errors
+            names = sorted(df[category_type].astype(str).unique().tolist())
+            selected_name = st.selectbox(f"Select {category_type}", names)
+            
+            # Create filters in sidebar or expander
+            with st.expander("Configure Analysis Parameters", expanded=True):
+                # Time period selection
+                time_period = st.radio("Select Time Period", ["Overall", "Monthly"])
+                
+                # Date range selection
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input("Start Date", min(df['Date'].dt.date) if 'Date' in df.columns else None)
+                with col2:
+                    end_date = st.date_input("End Date", max(df['Date'].dt.date) if 'Date' in df.columns else None)
+            
+            # Filter data for selected individual and time period
+            individual_df = df[df[category_type] == selected_name]
+            individual_df = individual_df[(individual_df['Date'].dt.date >= start_date) & 
+                                         (individual_df['Date'].dt.date <= end_date)]
+            
+            if len(individual_df) > 0:
+                # Calculate SS (Service Score) here instead of accessing it as a column
+                total_wc = individual_df['WC2'].sum()
+                total_error_points = individual_df['Error Points'].sum()
+                ss = round(100 - (total_error_points / total_wc * 1000), 2) if total_wc > 0 else 0
+                total_issues = individual_df['Issues'].sum() if 'Issues' in individual_df.columns else 0
+                error_rate = round(total_error_points / total_wc * 1000, 4) if total_wc > 0 else 0
+                
+                # Add calculated fields to the dataframe for later use
+                individual_df['Total_WC'] = individual_df['WC2']
+                individual_df['Total_Error_Points'] = individual_df['Error Points']
+                individual_df['Total_Issues'] = individual_df['Issues'] if 'Issues' in individual_df.columns else 0
+                individual_df['Error_Rate'] = individual_df['Error Points'] / individual_df['WC2'] * 1000
+                # Calculate SS for each row
+                individual_df['SS'] = 100 - (individual_df['Error Points'] / individual_df['WC2'] * 1000)
+                
+                # Display key metrics
+                st.subheader(f"Performance Metrics for {selected_name}")
+                
+                metric_cols = st.columns(4)
+                metric_cols[0].metric("Average Score (SS)", f"{ss:.2f}%")
+                metric_cols[1].metric("Total Word Count", f"{int(total_wc):,}")
+                metric_cols[2].metric("Total Issues", f"{int(total_issues):,}")
+                metric_cols[3].metric("Avg Error Rate", f"{error_rate:.4f}")
+                
+                # Add visualizations
+                if time_period == "Monthly":
+                    # Add month column for grouping
+                    if 'Month' not in individual_df.columns:
+                        individual_df['Month'] = individual_df['Date'].dt.to_period('M')
+                    
+                    # Group by month
+                    monthly_data = individual_df.groupby('Month').agg({
+                        'WC2': 'sum',
+                        'Error Points': 'sum',
+                        'Issues': 'sum' if 'Issues' in individual_df.columns else 'count'
+                    }).reset_index()
+                    
+                    # Calculate metrics for each month
+                    monthly_data['Total_WC'] = monthly_data['WC2']
+                    monthly_data['Total_Error_Points'] = monthly_data['Error Points']
+                    monthly_data['Total_Issues'] = monthly_data['Issues']
+                    monthly_data['Error_Rate'] = monthly_data['Error Points'] / monthly_data['WC2'] * 1000
+                    monthly_data['SS'] = 100 - (monthly_data['Error Points'] / monthly_data['WC2'] * 1000)
+                    
+                    monthly_data['Month'] = monthly_data['Month'].astype(str)
+                    
+                    # Create visualizations
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Line chart for SS score over time
+                        ss_fig = px.line(monthly_data, x='Month', y='SS', 
+                                         title=f"{selected_name}'s Quality Score Over Time",
+                                         markers=True)
+                        ss_fig.update_layout(yaxis_title="Score (SS)", xaxis_title="Month")
+                        st.plotly_chart(ss_fig, use_container_width=True)
+                    
+                    with col2:
+                        # Bar chart for Volume (Word Count)
+                        wc_fig = px.bar(monthly_data, x='Month', y='Total_WC',
+                                        title=f"{selected_name}'s Monthly Volume")
+                        wc_fig.update_layout(yaxis_title="Total Word Count", xaxis_title="Month")
+                        st.plotly_chart(wc_fig, use_container_width=True)
+                    
+                    # Error metrics over time
+                    error_fig = px.line(monthly_data, x='Month', 
+                                        y=['Total_Issues', 'Total_Error_Points', 'Error_Rate'],
+                                        title=f"{selected_name}'s Error Metrics Over Time",
+                                        markers=True)
+                    st.plotly_chart(error_fig, use_container_width=True)
+                
+                # Product breakdown
+                st.subheader("Product Performance")
+                product_breakdown = individual_df.groupby('Product').agg({
+                    'WC2': 'sum',
+                    'Error Points': 'sum',
+                    'Issues': 'sum' if 'Issues' in individual_df.columns else 'count'
+                }).reset_index()
+                
+                # Calculate SS for each product
+                product_breakdown['Total_WC'] = product_breakdown['WC2']
+                product_breakdown['Total_Issues'] = product_breakdown['Issues']
+                product_breakdown['SS'] = 100 - (product_breakdown['Error Points'] / product_breakdown['WC2'] * 1000)
+                
+                product_breakdown = product_breakdown.sort_values('Total_WC', ascending=False)
+                
+                # Visualize product distribution
+                fig = px.bar(product_breakdown, x='Product', y='Total_WC', 
+                             color='SS', text='SS',
+                             color_continuous_scale='RdYlGn',
+                             range_color=[60, 100],
+                             title=f"Product Distribution for {selected_name}")
+                fig.update_layout(yaxis_title="Total Word Count", xaxis_title="Product")
+                fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Content breakdown
+                st.subheader("Content Performance")
+                content_breakdown = individual_df.groupby('Content').agg({
+                    'WC2': 'sum',
+                    'Error Points': 'sum',
+                    'Issues': 'sum' if 'Issues' in individual_df.columns else 'count'
+                }).reset_index()
+                
+                # Calculate SS for each content type
+                content_breakdown['Total_WC'] = content_breakdown['WC2']
+                content_breakdown['Total_Issues'] = content_breakdown['Issues']
+                content_breakdown['SS'] = 100 - (content_breakdown['Error Points'] / content_breakdown['WC2'] * 1000)
+                
+                content_breakdown = content_breakdown.sort_values('Total_WC', ascending=False)
+                
+                fig = px.bar(content_breakdown, x='Content', y='Total_WC', 
+                             color='SS', text='SS',
+                             color_continuous_scale='RdYlGn',
+                             range_color=[60, 100],
+                             title=f"Content Distribution for {selected_name}")
+                fig.update_layout(yaxis_title="Total Word Count", xaxis_title="Content")
+                fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show detailed data
+                with st.expander("View Detailed Data"):
+                    st.dataframe(individual_df.sort_values('Date', ascending=False))
+            else:
+                st.warning(f"No data available for {selected_name} in the selected time period.")
+        else:
+            st.error(f"Column '{category_type}' not found in the dataset.")
+    
+    with individual_tabs[1]:  # Performance Comparison Tab
+        st.subheader("Performance Comparison")
+        
+        # Choose comparison type
+        comparison_type = st.radio("Select Comparison Type", ["By Product", "By Content"])
+        
+        # Configuration options
+        with st.expander("Configure Comparison Parameters", expanded=True):
+            # Choose role category for comparison
+            compare_category = st.radio("Select Category to Compare", ["Owner/TR", "RV/PR"], key="compare_category")
+            
+            if comparison_type == "By Product":
+                # Get unique products
+                products = sorted(df['Product'].astype(str).unique().tolist())
+                selected_product = st.selectbox("Select Product", products)
+                dimension = "Product"
+                selected_dimension = selected_product
+            else:  # By Content
+                # Get unique content types
+                contents = sorted(df['Content'].astype(str).unique().tolist())
+                selected_content = st.selectbox("Select Content", contents)
+                dimension = "Content"
+                selected_dimension = selected_content
+            
+            # Time period selection
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input("Start Date", 
+                                          min(df['Date'].dt.date) if 'Date' in df.columns else None,
+                                          key="compare_start")
+            with col2:
+                end_date = st.date_input("End Date", 
+                                        max(df['Date'].dt.date) if 'Date' in df.columns else None,
+                                        key="compare_end")
+            
+            # Performance thresholds
+            threshold_options = st.columns(3)
+            with threshold_options[0]:
+                show_high_performers = st.checkbox("High performers (SS ≥ 97%)", True)
+            with threshold_options[1]:
+                show_mid_performers = st.checkbox("Mid performers (92% ≤ SS < 97%)", True)
+            with threshold_options[2]:
+                show_low_performers = st.checkbox("Low performers (SS < 92%)", True)
+            
+            # Volume filter
+            min_volume = st.slider("Minimum Word Count", 
+                                  min_value=0, 
+                                  max_value=int(df['WC2'].max()),  # Changed from Total_WC to WC2
+                                  value=0,
+                                  step=1000)
+            
+            # Select individuals to highlight (optional)
+            if compare_category in df.columns:
+                all_names = sorted(df[compare_category].astype(str).unique().tolist())
+                highlighted_names = st.multiselect("Highlight Specific Individuals (Optional)", all_names)
+            else:
+                highlighted_names = []
+                st.error(f"Column '{compare_category}' not found in the dataset.")
+        
+        # Filter data based on selections
+        if dimension in df.columns:
+            filtered_df = df[df[dimension] == selected_dimension]
+            filtered_df = filtered_df[(filtered_df['Date'].dt.date >= start_date) & 
+                                     (filtered_df['Date'].dt.date <= end_date)]
+            
+            if len(filtered_df) > 0 and compare_category in df.columns:
+                # Group by individual (Owner/TR or RV/PR)
+                comparison_df = filtered_df.groupby(compare_category).agg({
+                    'WC2': 'sum',
+                    'Error Points': 'sum',
+                    'Issues': 'sum' if 'Issues' in filtered_df.columns else 'count'
+                }).reset_index()
+                
+                # Calculate metrics for each individual
+                comparison_df['Total_WC'] = comparison_df['WC2']
+                comparison_df['Total_Error_Points'] = comparison_df['Error Points']
+                comparison_df['Total_Issues'] = comparison_df['Issues']
+                comparison_df['Error_Rate'] = comparison_df['Error Points'] / comparison_df['WC2'] * 1000
+                comparison_df['SS'] = 100 - (comparison_df['Error Points'] / comparison_df['WC2'] * 1000)
+                
+                # Apply filters
+                comparison_df = comparison_df[comparison_df['Total_WC'] >= min_volume]
+                
+                # Apply performance thresholds
+                performance_filtered = pd.DataFrame()
+                
+                if show_high_performers:
+                    high_performers = comparison_df[comparison_df['SS'] >= 97]
+                    performance_filtered = pd.concat([performance_filtered, high_performers])
+                
+                if show_mid_performers:
+                    mid_performers = comparison_df[(comparison_df['SS'] >= 92) & (comparison_df['SS'] < 97)]
+                    performance_filtered = pd.concat([performance_filtered, mid_performers])
+                
+                if show_low_performers:
+                    low_performers = comparison_df[comparison_df['SS'] < 92]
+                    performance_filtered = pd.concat([performance_filtered, low_performers])
+                
+                comparison_df = performance_filtered.sort_values('SS', ascending=False)
+                
+                if len(comparison_df) > 0:
+                    st.subheader(f"Performance Comparison for {dimension}: {selected_dimension}")
+                    
+                    # Add column to highlight selected individuals
+                    if highlighted_names:
+                        comparison_df['Highlighted'] = comparison_df[compare_category].isin(highlighted_names)
+                        color_column = 'Highlighted'
+                        symbol_column = 'Highlighted'
+                        color_discrete_map = {True: 'red', False: 'blue'}
+                        symbol_map = {True: 'circle', False: 'circle-open'}
+                    else:
+                        color_column = 'SS'
+                        symbol_column = None
+                        color_discrete_map = None
+                        symbol_map = None
+                    
+                    # Performance scatter plot (SS vs Word Count)
+                    fig = px.scatter(comparison_df, 
+                                    x='Total_WC', 
+                                    y='SS',
+                                    size='Total_WC',
+                                    color=color_column,
+                                    symbol=symbol_column,
+                                    hover_name=compare_category,
+                                    color_discrete_map=color_discrete_map,
+                                    color_continuous_scale='RdYlGn',
+                                    range_color=[60, 100],
+                                    title=f"Performance Matrix for {dimension}: {selected_dimension}")
+                    
+                    # Add highlight text for selected individuals
+                    if highlighted_names:
+                        for name in highlighted_names:
+                            if name in comparison_df[compare_category].values:
+                                row = comparison_df[comparison_df[compare_category] == name]
+                                fig.add_annotation(
+                                    x=row['Total_WC'].values[0],
+                                    y=row['SS'].values[0],
+                                    text=name,
+                                    showarrow=True,
+                                    arrowhead=1,
+                                    ax=0,
+                                    ay=-40
+                                )
+                    
+                    # Add threshold lines
+                    fig.add_hline(y=97, line_dash="dash", line_color="green", 
+                                 annotation_text="High Performance (97%)")
+                    fig.add_hline(y=92, line_dash="dash", line_color="orange", 
+                                 annotation_text="Mid Performance (92%)")
+                    
+                    fig.update_layout(xaxis_title="Total Word Count", yaxis_title="Score (SS)")
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Bar chart for volume and quality
+                    fig = px.bar(comparison_df, 
+                                x=compare_category, 
+                                y='Total_WC',
+                                color='SS',
+                                text='SS',
+                                color_continuous_scale='RdYlGn',
+                                range_color=[60, 100],
+                                title=f"Volume and Quality Comparison for {dimension}: {selected_dimension}")
+                    
+                    fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+                    fig.update_layout(xaxis_title=compare_category, yaxis_title="Total Word Count")
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Error rate comparison
+                    error_fig = px.bar(comparison_df,
+                                      x=compare_category,
+                                      y='Error_Rate',
+                                      color='Error_Rate',
+                                      color_continuous_scale='RdYlGn_r',  # Reversed color scale (red is bad)
+                                      title=f"Error Rate Comparison for {dimension}: {selected_dimension}")
+                    
+                    error_fig.update_layout(xaxis_title=compare_category, yaxis_title="Error Rate")
+                    st.plotly_chart(error_fig, use_container_width=True)
+                    
+                    # Display comparison data table
+                    with st.expander("View Detailed Comparison Data"):
+                        # Format the dataframe for display
+                        display_df = comparison_df.copy()
+                        display_df['SS'] = display_df['SS'].round(2).astype(str) + '%'
+                        display_df['Error_Rate'] = display_df['Error_Rate'].round(4)
+                        st.dataframe(display_df)
+                        
+                        # Download option
+                        csv = display_df.to_csv(index=False)
+                        st.download_button(
+                            label="Download Comparison Data as CSV",
+                            data=csv,
+                            file_name=f"comparison_{dimension}_{selected_dimension}.csv",
+                            mime="text/csv"
+                        )
+                else:
+                    st.warning(f"No individuals match the selected filters for {dimension}: {selected_dimension}")
+            else:
+                if len(filtered_df) == 0:
+                    st.warning(f"No data available for {dimension}: {selected_dimension} in the selected time period.")
+                else:
+                    st.error(f"Column '{compare_category}' not found in the dataset.")
+        else:
+            st.error(f"Column '{dimension}' not found in the dataset.")
+else:
+    st.info("Please upload an Excel file in the section above to enable individual analysis.")
